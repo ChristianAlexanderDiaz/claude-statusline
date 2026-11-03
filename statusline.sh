@@ -113,7 +113,7 @@ stale=""
 # An explicitly set process value takes precedence, including an invalid value.
 compact_window="${CLAUDE_CODE_AUTO_COMPACT_WINDOW-}"
 if [ "${CLAUDE_CODE_AUTO_COMPACT_WINDOW+x}" != x ]; then
-  compact_window=$(jq -r '.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW // ""' "$cfg_dir/settings.json" 2>/dev/null) || compact_window=""
+  compact_window=$(jq -r '.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW // .autoCompactWindow // ""' "$cfg_dir/settings.json" 2>/dev/null) || compact_window=""
 fi
 if [ "${PCT%.*}" -ge 0 ] 2>/dev/null; then
   PCT=$(awk -v pct="$PCT" -v window="$WINDOW" -v compact="$compact_window" 'BEGIN {
