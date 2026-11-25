@@ -162,7 +162,12 @@ fi
 if awk -v c="$COST" 'BEGIN{exit !(c ~ /^-?[0-9.]+([eE][-+]?[0-9]+)?$/ && c + 0 >= 0)}'; then
   cost_color=$(awk -v c="$COST" -v muted="$MUTED" -v gold="$GOLD" -v love="$LOVE" \
     'BEGIN{printf "%s", (c >= 25 ? love : (c >= 10 ? gold : muted))}')
-  line+="${GAP}${cost_color}$(awk -v c="$COST" 'BEGIN{printf "$%.2f", c}')${OFF}"
+  line+="${GAP}${cost_color}$(awk -v c="$COST" 'BEGIN{
+    split(sprintf("%.2f", c), amount, /[.]/);
+    for (i = length(amount[1]) - 3; i > 0; i -= 3)
+      amount[1] = substr(amount[1], 1, i) "," substr(amount[1], i + 1);
+    printf "$%s.%s", amount[1], amount[2];
+  }')${OFF}"
 fi
 
 # At 95%, add "switch" for normal accounts or "stop" for the team account,
