@@ -19,42 +19,25 @@ OFF='\033[0m'
 
 # Split on a unit separator, not a tab: tab is IFS whitespace, so bash would
 # collapse consecutive tabs and silently shift every field after an empty one.
-IFS=$'\x1f' read -r MODEL EFFORT FAST PCT RL5 RL5_AT RL7 RL7_AT SID WINDOW COST <<<"$(
+IFS=$'\x1f' read -r MODEL EFFORT FAST PCT SID WINDOW COST <<<"$(
   jq -r '[
     .model.display_name // "?",
     .effort.level // "",
     (if .fast_mode then "1" else "" end),
     (.context_window.used_percentage // -1),
-    (.rate_limits.five_hour.used_percentage // -1),
-    (.rate_limits.five_hour.resets_at // 0),
-    (.rate_limits.seven_day.used_percentage // -1),
-    (.rate_limits.seven_day.resets_at // 0),
     (.session_id // ""),
     (.context_window.context_window_size // 0),
     (.cost.total_cost_usd // -1)
   ] | map(tostring) | join("\u001f")' <<<"$input"
 )"
 
-# 1789350600 -> 4h53m of runway left; prints nothing once the moment has passed
-eta() {
-  awk -v t="$1" -v now="$(date +%s)" 'BEGIN{
-    s = t - now;
-    if (t <= 0 || s <= 0) exit;
-    d = int(s/86400); h = int((s%86400)/3600); m = int((s%3600)/60);
-    if (d)      printf "%dd%dh", d, h;
-    else if (h) printf "%dh%dm", h, m;
-    else        printf "%dm", (m > 0 ? m : 1)
-  }'
-}
-
 # Filled cells and percentages show fullness; empty cells stay muted.
 GAP=" ${MUTED}│${OFF} "
 
 # Which account this session is on: CLAUDE_CONFIG_DIR (unset means ~/.claude)
 # looked up against ~/.config/claude-accounts, one "<name> <config folder>
-# [expected email]" per line (see home/.config/claude-accounts.example). Falls
-# back to the config folder's basename when the file, or a matching line, is
-# missing.
+# [expected email]" per line. The team slot is named "team"; all personal slots
+# display "ultra", including existing slots named "max" and unmatched folders.
 accounts_file="$HOME/.config/claude-accounts"
 cfg_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 cfg_dir="${cfg_dir%/}"
@@ -73,7 +56,7 @@ if [ -r "$accounts_file" ]; then
     fi
   done <"$accounts_file"
 fi
-[ -z "$ACCOUNT" ] && ACCOUNT="$(basename "$cfg_dir")"
+[ "$ACCOUNT" = "team" ] || ACCOUNT="ultra"
 
 # A login typed in the wrong place lands on whatever account the browser holds,
 # so check who this slot is really signed in as. Once per session: the answer
@@ -90,12 +73,6 @@ if [ -n "$EXPECTED" ] && [ -n "$SID" ]; then
     WRONG=1
   fi
 fi
-
-# The team account must never run into paid extra usage, so it gets "stop"
-# instead of "switch" once a quota is nearly spent. Name it "team" in the
-# accounts file to opt in.
-IS_TEAM=""
-[ "$ACCOUNT" = "team" ] && IS_TEAM=1
 
 line="${SUBTLE}${ACCOUNT}${OFF}${GAP}"
 [ -n "$WRONG" ] && line="${LOVE}${ACCOUNT} WRONG ACCOUNT${OFF}${GAP}"
@@ -169,35 +146,5 @@ if awk -v c="$COST" 'BEGIN{exit !(c ~ /^-?[0-9.]+([eE][-+]?[0-9]+)?$/ && c + 0 >
     printf "$%s.%s", amount[1], amount[2];
   }')${OFF}"
 fi
-
-# At 95%, add "switch" for normal accounts or "stop" for the team account,
-# since that one must never run into paid extra usage. The reset countdown shows
-# from 50%, muted until 75%, then gold, then love from 90%.
-quota() {
-  local label=$1 pct=${2%.*} at=$3 color text left tcolor
-  if ! [ "$pct" -ge 0 ] 2>/dev/null; then
-    printf '%s' "${SUBTLE}${label} $(bar 0 5) ${SUBTLE}?${OFF}"
-    return 0
-  fi
-
-  color=$(heat "$pct")
-  if [ "$pct" -ge 95 ] 2>/dev/null; then
-    color=$LOVE
-    text=$([ -n "$IS_TEAM" ] && printf ' stop' || printf ' switch')
-  else
-    text=""
-  fi
-  printf '%s' "${color}${label} $(bar "$2" 5 "$color")${color}${text}${OFF}"
-  if [ "$pct" -ge 50 ] 2>/dev/null; then
-    if   [ "$pct" -ge 90 ]; then tcolor=$LOVE
-    elif [ "$pct" -ge 75 ]; then tcolor=$GOLD
-    else                         tcolor=$MUTED
-    fi
-    left=$(eta "$at"); [ -n "$left" ] && printf '%s' " ${tcolor}↻${left}${OFF}"
-  fi
-  return 0
-}
-# Both windows stay visible; reset timers appear once a window is half spent.
-line+="${GAP}$(quota 5h "$RL5" "$RL5_AT") $(quota 7d "$RL7" "$RL7_AT")"
 
 printf '%b\n' "$line"
